@@ -1,0 +1,445 @@
+---
+title: "Primes"
+output: 
+  rmarkdown::html_vignette:
+    fig_height: 3
+    fig_width: 5
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+---
+
+```{r setup, include=F}
+knitr::opts_chunk$set(echo=F, warning=F, message=F, dev="png", dev.args=list(type="cairo"))
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(pracma)
+library(knitr)
+source("Primes.R")
+```
+
+# The Prime Number Theorem
+
+The number of primes less than equal to N ($\pi(N)$) is approximated by:
+
+$$\pi(N)\approx\frac{N}{\log(N)}$$
+
+```{r pinvslogn, echo=F}
+primes = data.frame(x=1:10000, 
+           NdivLogN=c(0, sapply(2:10000, function(N) N/log(N))),
+           Pi=PrimePiList(10000))
+primes %>% 
+  gather(key, value, -x) %>% 
+  ggplot(aes(x=x, y=value, color=key)) +
+    geom_line() +
+    ylab("Pi(n) or N/LogN") +
+    xlab("N")
+```
+
+After N=10 then $\frac{1}{\log(N)}$ is an under-estimate of $\pi(N)$ but the % error decreases as N increases.
+
+```{r errordecreases}
+primes$Error = (primes$Pi-primes$NdivLogN)/primes$Pi*100
+primes[-(1:10),] %>% 
+  ggplot(aes(x=x, y=Error)) +
+    geom_line()
+```
+
+## Consequences of the PNT
+
+### The probability of a individual number being prime is approx $\frac{1}{Log(N)}$
+
+If $\frac{N}{\log(N)}$ is roughly the number of primes <= N then the probability of any single number <= N being prime in N/LogN/N = 1/LogN. But
+
+- This is the **average** probability - the exact probability will reduce over the range of 1:N because of the general thinning of primes
+
+- This is countered in large N by large majority of 1:N being "close" to N, ie 90% within 1 power of 10.
+
+## An improvement on the PNT: The Log Integral
+
+Is the area under the inverse log equation. 
+
+$$\int_{0}^{x}\frac{1}{log(t)}dt$$
+
+No simple solution. Solve by Ramanujan series or using Pracma package
+
+```{r}
+x = seq(from=0.1, to=10, by=0.1)
+x = x[-10]
+require(pracma)
+y = Re(li(x))
+data.frame(x=x,li=y) %>% 
+  ggplot(aes(x=x,y=li)) +
+  geom_line()
+```
+
+The Li is a better estimate of Pi(N) than N/Log(N) - it slightly overestimates until extremely large N.
+
+```{r li, echo=F}
+primes = data.frame(x=1:10000, 
+           NdivLogN=c(0, sapply(2:10000, function(N) N/log(N))),
+           Pi=PrimePiList(10000),
+           Li=Re(li(1:10000)))
+primes %>% 
+  gather(key, value, -x) %>% 
+  ggplot(aes(x=x, y=value, color=key)) +
+    geom_line() +
+    ylab("Pi(n) or N/LogN") +
+    xlab("N")
+```
+
+# The Zeta Function
+
+## Definition
+
+$$\zeta(s) = \sum_1^\infty\frac{1}{n^s}$$
+
+## Zeta for domain s>1
+
+Zeta using standard series is divergent for real numbers <= 1. Plot below using first 100 terms.
+
+```{r}
+zeta = function(s, n=100) {
+  sum(sapply(1:n, function(x) 1/x^s))
+}
+
+ss=seq(from=1.1, to=5.0, by=0.1)
+zetas = sapply(ss, zeta)
+data.frame(s=ss, zeta=zetas) %>% 
+  ggplot(aes(x=s, y=zeta)) +
+    geom_line() +
+    ylim(0,5) +
+    xlim(0,5) +
+    geom_vline(xintercept=1.0, linetype="dashed") +
+    geom_hline(yintercept=1.0, linetype="dashed") +
+    ylab("zeta(s)")
+```
+
+## Zeta for s < 0 contains the trivial zeros
+
+Although zeta is divergent for s<=1 using the standard infinite series the series can be rearranged to give zeta for negative s:
+
+$$\zeta(1-s)=2^{1-s}\pi^{-s}\sin\left(\frac{1-s}{2}\pi\right)(s-1)!\zeta(s)$$
+
+```{r}
+# factorial of a real number is gamma(x+1)
+zetaNegative = function(s) {
+  2.0^(1.0-s)*pi^(-s)*sin(((1.0-s)/2.0)*pi)*gamma(s)*zeta(s)
+}
+
+ss=seq(from=1.5, to=15.0, by=0.1)
+zetas = sapply(ss, zetaNegative)
+data.frame(s=(1-ss), zeta=zetas) %>% 
+  ggplot(aes(x=s, y=zeta)) +
+    geom_line() +
+    scale_x_continuous(breaks=seq(-14, 0, 2)) +
+    ylab("zeta(s)")
+```
+
+From the graph above Zeta = 0 at every negative even number
+
+## Zeta for domain 0<=s<1 contains the critical line at 0.5
+
+Zeta for domain 0 to 1 can be obtained via
+
+$$\zeta(s) = \eta(s) \div \left(1-\frac{1}{2^{s-1}}\right)$$
+
+Where $\eta(s)$ is
+
+$$\eta(s) = 1 - \frac{1}{2^s} + \frac{1}{3^s}  - \frac{1}{4^s} +  \frac{1}{5^s}  - \frac{1}{6^s} + \frac{1}{7^s} - \ldots$$
+
+```{r}
+eta=function(s, n=100) {
+  signs = rep(c(1,-1),50)
+  sum(sapply(1:n, function(x) signs[x]/x^s))
+}
+
+zetaCritical=function(s,n=100) {
+  # pracma eta is more accurate
+  pracma::eta(s) / (1-(1/2^(s-1)))
+}
+
+ss=seq(from=0, to=0.99, by=0.01)
+zetas = sapply(ss, zetaCritical)
+data.frame(s=(1-ss), zeta=zetas) %>% 
+  ggplot(aes(x=s, y=zeta)) +
+    geom_line() +
+    ylab("zeta(s)")
+```
+
+
+Feeding values of s = 0.5 + xi into Zeta(s) we can get the Zeta complex plane result where x axis is the real component of the result and y axis is the imaginary component.
+
+```{r}
+si = complex(real=0.5, imaginary=seq(from=0, to=35, by=0.1))
+zetas = sapply(si, zetaCritical)
+data.frame(real=Re(zetas), imaginary=Im(zetas)) %>% 
+  ggplot(aes(x=real, y=imaginary)) +
+    geom_path() + geom_hline(yintercept=0, linetype="dashed")
+```
+
+# J(x)
+
+J(x) increments every time there is a new prime or a sqrt of a prime or a cubic root of a prime etc.
+
+$$J(x) = \pi(x) + \frac{1}{2}\pi(\sqrt{x}) + \frac{1}{3}\pi(\sqrt[3]{x}) + \frac{1}{4}\pi(\sqrt[4]{x}) + \frac{1}{5}\pi(\sqrt[5]{x})+\ldots$$
+
+```{r}
+jfunc = function(x) {
+  n = 2
+  ans = PrimePi(x)
+  currentRoot = x^(1/n)
+  while (currentRoot >= 2) {
+    ans = ans + ((1/n) * PrimePi(currentRoot))
+    n = n + 1
+    if (n > 30) stop("Something wrong, why so many roots?")
+    currentRoot = x^(1/n)
+  }
+  return(ans)
+}
+
+data.frame(x=1:100, Jx = sapply(1:100, jfunc)) %>% 
+  ggplot(aes(x=x, y=Jx)) +
+    geom_point()
+```
+
+## Invert J(x) to get Pi(x) in terms of J(x)
+
+Using the Mobius transformation it is possible to isolate Pi(x) from J(x):
+
+$$\pi(x) = \sum_n\frac{\mu(n)}{n}J(\sqrt[n]{x})$$
+
+Where $\mu(n)$ is
+
+- $\mu(1)=1$
+- $\mu(n)=0$ if n has a square prime factor
+- $\mu(n)=-1$ if n is prime or the product of an odd number of unique primes
+- $\mu(n)=1$ if n is the product of an even number of unique rimes
+
+The values of the Mobius function are
+
+1	−1	−1	0	−1	1	−1	0	0	1 −1	0	−1	1	1	0	−1	0	−1	0 1	1	−1	0	0	1	0	0	−1	−1
+
+```{r}
+mobius = c(1,−1,−1,0,−1,1,−1,0,0,1,−1,0,−1,1,1,0,−1,0,−1,0,1,1,−1,0,0,1,0,0,−1,−1)
+
+PrimePiByJx = function(x) {
+  ans = jfunc(x)
+  n=2
+  currentRoot = x^(1/n)
+  while (currentRoot >= 2) {
+    ans = ans + (mobius[n] * (1/n) * jfunc(currentRoot))
+    n = n + 1
+    if (n > 30) stop("Something wrong, why so many roots?")
+    currentRoot = x^(1/n)
+  }
+  return(ans)
+}
+
+N = c(10,50,100,500,1000,10000)
+kable(data.frame(N=N, PrimePi=sapply(N, PrimePi), PrimePiByJx = sapply(N,PrimePiByJx)))
+```
+
+# The Golden Key - Zeta in terms of J(x)
+
+We want to express Pi(x) in terms of zeta. Procedure:
+
+1. Pi(x) from J(x) = done
+2. Zeta from J(x) via zeta sieve = Golden Key this section
+3. Invert J(x) to get J(x) from zeta and hence provide Pi(x) from zeta
+
+## Zeta and the Sieve of Erasthones
+
+- Mulitple both sides of the Zeta function by the first term
+- Subtract this new equation from the first function
+- The subtraction will remove all multiples of the first term
+- The first term will be prime and remains on the LHS
+- Take the first term (which will be prime) of the new RHS and repeat
+- Repeat for infinity
+- Rearrange
+
+$$\zeta(s) = \sum_n^\infty n^{-s}=\prod_p (1-p^{-s})^{-1}$$
+
+The Golden Key links the sum of the whole numbers to the product of the primes
+
+## Expressing zeta in terms of J(x) via calculus
+
+Procedure
+
+1. Take log of both sides and since log(1/a) = -log(a)
+
+$$log \zeta(s) = -log(1-\frac{1}{2^s}) - log(1-\frac{1}{3^s}) - log(1-\frac{1}{5^s}) - \ldots$$
+
+2. Use Newton's infinite series for log(1-x) = -x^1/1 - x^2/2 - x^3/3 etc to get an infinite series for each of the infinite number of lpg zeta terms
+
+3. Rewrite each of the individual terms as an intregral of a strip of the J function
+
+4. Multiple the J function by x^-s-1 to squish the right side of the J down so that horizontal strips are finite, not infinite.
+
+```{r}
+data.frame(x=(1:2000)/100, Jxxs = sapply((1:2000)/100, function(x) { jfunc(x) * x^(-2.2) })) %>% 
+  ggplot(aes(x=x, y=Jxxs)) +
+    geom_path()
+```
+
+5. The integral of this squished J function (area under the curve) is the same as  1/s * log zeta. This is key we have converted zeta into an integral linking analysis with calculus.
+
+$$\frac{1}{s}\log\zeta(s) = \int_{0}^{\infty}J(x)x^{-1-s} dx$$
+
+# Inverting the Key - J(x) in terms of zeta zeros
+
+Remember: We want to express Pi(x) in terms of zeta. Procedure:
+
+1. Pi(x) in terms of J(x)
+
+$$\pi(x) = \sum_n\frac{\mu(n)}{n}J(\sqrt[n]{x})$$
+
+2. Zeta in terms of J(x) via zeta sieve = Golden Key
+
+$$\frac{1}{s}\log\zeta(s) = \int_{0}^{\infty}J(x)x^{-1-s} dx$$
+
+3. Invert Golden Key to get J(x) in terms of zeta zeros
+
+$$J(x)=Li(x) - \sum_{\rho}Li(x^\rho)-\log2+\int_{x}^{\infty}\frac{dt}{t(t^2-1)\log t}$$
+
+## Terms 3 and 4 = constant
+
+For x>2 the fourth term is a constant 0.1400101011432869
+The third term is a constant 0.69314718055994
+The third and fourth terms together are bounded -0.6931... to -0.5531...
+These terms are therefore trivial for large x
+
+## Term 2 = Log integral of x to power of zeta zeros
+
+$\rho$ = the zeta nontrivial zeros which if Reiman is correct are all along 0.5 + ti.
+
+$x^{0.5 + ti}$ plotted on the complex plane is a repeating circle of radius $\sqrt{x}$ with the zeros dotted along the circumference
+
+eg The critical line from 0.5 + 14i to 0.5 + 50i for x=20 with the zeros in red
+
+```{r fig.height=3, fig.width=3}
+zetaroots = c(14.134725,21.022039,25.010857,30.424876,32.935061,37.586178,40.918719 ,43.327073,48.005150,49.773832)
+zs = sapply(complex(real=0.5, imaginary=seq(14,50,.1)), function(z) 20^z)
+zeros = sapply(complex(real=0.5, imaginary=zetaroots), function(z) 20^z)
+data.frame(real=Re(zs), imaginary=Im(zs)) %>% 
+  ggplot(aes(x=real, y=imaginary)) +
+    geom_path() +
+    geom_point(data=data.frame(rz=Re(zeros), iz=Im(zeros)), aes(x=rz, y=iz), color="red", size=4)
+```
+
+The zeta roots from 14i to 50i are at:
+14.134725
+21.022039
+25.010857
+30.424876
+32.935061
+37.586178
+40.918719 
+43.327073
+48.005150
+49.773832
+
+Running this through Li converts the critical line circle into a critical line spiral
+
+```{r}
+zetaroots = c(14.134725,21.022039,25.010857,30.424876,32.935061,37.586178,40.918719 ,43.327073,48.005150,49.773832)
+# NB: Li(x^z) doesn't work for complex z. Use Li=Ei(log(x)) and by power rule log(x^s) = s*log(x)
+zs = sapply(complex(real=0.5, imaginary=seq(14,50,.1)), function(z) expint_Ei(z*log(20)))
+zeros = sapply(complex(real=0.5, imaginary=zetaroots), function(z) expint_Ei(z*log(20)))
+data.frame(real=Re(zs), imaginary=Im(zs)) %>% 
+  ggplot(aes(x=real, y=imaginary)) +
+    geom_path() +
+    geom_point(data=data.frame(rz=Re(zeros), iz=Im(zeros)), aes(x=rz, y=iz), color="red", size=4)
+```
+
+Remember that for every zero there is a conjugate zero at 0.5-ti
+
+```{r}
+zetaroots = c(-14.134725,14.134725)
+zs = sapply(complex(real=0.5, imaginary=seq(-15,15,.1)), function(z) expint_Ei(z*log(20)))
+zeros = sapply(complex(real=0.5, imaginary=zetaroots), function(z) expint_Ei(z*log(20)))
+data.frame(real=Re(zs), imaginary=Im(zs)) %>% 
+  ggplot(aes(x=real, y=imaginary)) +
+    geom_path() +
+    geom_point(data=data.frame(rz=Re(zeros), iz=Im(zeros)), aes(x=rz, y=iz), color="red", size=4)
+```
+
+### Summing Li
+
+To ensure convergence need to add each zeta zero in order with it's conjugate. The imaginary parts will cancel and then add the real parts. Eg for J(20) using first 10 roots
+
+```{r}
+zetaroots = c(14.134725,21.022039,25.010857,30.424876,32.935061,37.586178,40.918719,43.327073,48.005150,49.773832)
+liposi = sapply(complex(real=0.5, imaginary=zetaroots), function(z) expint_Ei(z*log(20)))
+linegi = sapply(complex(real=0.5, imaginary=-zetaroots), function(z) expint_Ei(z*log(20)))
+sumli = liposi + linegi
+
+kable(data.frame(ZetaRoots = zetaroots, LiPosi = liposi, LiNegi = linegi, LiSum = sumli, CumSumLi=cumsum(Re(sumli))))
+```
+
+Term3 takes a long time to converge
+
+```{r}
+zetaroots=as.numeric(readLines("zeros.txt"))
+log20 = log(20)
+x=cumsum(sapply(zetaroots[1:1000], function(z) {
+  expint_Ei(complex(real=0.5, imaginary=z)*log20) + expint_Ei(complex(real=0.5,imaginary=-z)*log20)
+}))
+data.frame(k=1:length(x), SumLiK=Re(x)) %>% 
+  ggplot(aes(x=k,y=SumLiK)) + 
+    geom_point()
+```
+
+# Pi(x) in terms of J(x) via zeta zeros
+
+$$\pi(x) = \sum_n\frac{\mu(n)}{n}J(\sqrt[n]{x})$$
+
+Where J(x) is
+
+$$J(x)=Li(x) - \sum_{\rho}Li(x^\rho)-\log2+\int_{x}^{\infty}\frac{dt}{t(t^2-1)\log t}$$
+
+And mu(1:20) is [1,−1,−1,0,−1,1,−1,0,0,1,−1,0,−1,1,1,0,−1,0,−1,0,1,1,−1,0,0,1,0,0,−1,−1]
+
+## Example Pi(1000000)
+
+> TODO: Calculate the integral term from x to infinity
+
+```{r}
+# constants
+mu=c(1,−1,−1,0,−1,1,−1,0,0,1,−1,0,−1,1,1,0,−1,0,−1,0,1,1,−1,0,0,1,0,0,−1,−1)
+maxIntegral = 0.1400101011432869
+
+x=1000000
+
+ans=rbind()
+
+N=1
+curterm = x^(1/N)
+
+while (curterm >=2) {
+  mudivn = mu[N]/N
+  if (mudivn != 0) {
+    Lix = li(curterm) * mudivn
+    logx = log(curterm)
+    SumLixp = sum(sapply(zetaroots[1:1000], function(z) {
+      Re(expint_Ei(complex(real=0.5, imaginary=z)*logx) + expint_Ei(complex(real=0.5,imaginary=-z)*logx))
+    })) * mudivn * -1
+    Log2 = log(2) * mudivn * -1
+    Integral = maxIntegral * mudivn #TODO - calculate the actual integral from x to infinity
+    Total = Lix + SumLixp + Log2 + Integral
+  
+    ans = rbind(ans, c(N, curterm, mudivn, Lix, SumLixp, Log2, Integral, Total))
+  }
+  
+  N=N+1
+  curterm = x^(1/N)
+}
+ans=as.data.frame(ans)
+names(ans) = c("N", "XRootN", "MuDivN","Lix","SumLixp","Log2","Integral","Total")
+kable(round(ans, 4))
+```
+
+Thus Pi(1000000) = `r prettyNum(sum(ans$Total))`
+
