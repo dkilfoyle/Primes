@@ -306,8 +306,8 @@ $$J(x)=Li(x) - \sum_{\rho}Li(x^\rho)-\log2+\int_{x}^{\infty}\frac{dt}{t(t^2-1)\l
 
 ## Terms 3 and 4 = constant
 
-For x>2 the fourth term is a constant 0.1400101011432869
-The third term is a constant 0.69314718055994
+Because x>2 the fourth term is at most 0.1400101011432869
+The third term (log2) is a constant 0.69314718055994
 The third and fourth terms together are bounded -0.6931... to -0.5531...
 These terms are therefore trivial for large x
 
@@ -404,7 +404,7 @@ And mu(1:20) is [1,−1,−1,0,−1,1,−1,0,0,1,−1,0,−1,1,1,0,−1,0,−1,0
 
 ## Example Pi(1000000)
 
-> TODO: Calculate the integral term from x to infinity
+> TODO: Calculate the integral term from x to infinity instead of 2 to infinity
 
 ```{r}
 # constants
@@ -427,7 +427,7 @@ while (curterm >=2) {
       Re(expint_Ei(complex(real=0.5, imaginary=z)*logx) + expint_Ei(complex(real=0.5,imaginary=-z)*logx))
     })) * mudivn * -1
     Log2 = log(2) * mudivn * -1
-    Integral = maxIntegral * mudivn #TODO - calculate the actual integral from x to infinity
+    Integral = maxIntegral * mudivn #TODO - calculate the actual integral from curterm to infinity
     Total = Lix + SumLixp + Log2 + Integral
   
     ans = rbind(ans, c(N, curterm, mudivn, Lix, SumLixp, Log2, Integral, Total))
